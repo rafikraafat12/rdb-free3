@@ -1,0 +1,64 @@
+name: Advanced-Free-RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-rdp:
+    runs-on: windows-latest
+
+    steps:
+    - name: Download Playit
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
+        Start-Sleep -Seconds 5
+
+    - name: Enable Remote Desktop & Create User
+      run: |
+        # تمكين RDP
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+        # تمكين المصادقة على RDP
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+        # إنشاء مستخدم جديد إذا لم يكن موجود
+        $password = ConvertTo-SecureString "admin@123" -AsPlainText -Force
+        If (-Not (Get-LocalUser -Name "runneradmin" -ErrorAction SilentlyContinue)) {
+          New-LocalUser -Name "runneradmin" -Password $password -FullName "RDP User" -Description "User for GitHub RDP Workflow"
+        }
+
+    - name: Copy Files Automatically
+      run: |
+        $tasks = @(
+            @{source="C:\Users\Public\Documents\Source1"; destination="C:\Users\Public\Documents\Dest1"},
+            @{source="C:\Users\Public\Documents\Source2"; destination="C:\Users\Public\Documents\Dest2"}
+        )
+        foreach ($task in $tasks) {
+            if (!(Test-Path -Path $task.destination)) {
+                New-Item -ItemType Directory -Path $task.destination
+            }
+            Copy-Item -Path "$($task.source)\*" -Destination $task.destination -Recurse -Force
+        }
+
+    - name: Run Additional Programs
+      run: |
+        $programs = @(
+            "notepad.exe",
+            "calc.exe"
+        )
+        foreach ($prog in $programs) {
+            Start-Process $prog
+        }
+
+    - name: Run Playit Tunnel
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
+      run: |
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY"
+        Start-Sleep -Seconds 21600  # تشغيل لمدة 6 ساعات
+
+    - name: Log Completion
+      run: |
+        $logFile = "C:\Users\Public\Documents\RDP_Workflow_Log.txt"
+        Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Workflow اكتملت بنجاح!"
